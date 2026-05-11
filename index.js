@@ -175,7 +175,7 @@ comandos[nome.trim()] = resposta.trim()
 salvarComandos(comandos)
 
 return sock.sendMessage(from, {
-text: ✅ Comando ${nome} criado!
+text: `✅ Comando ${nome} criado!`
 })
 }
 
@@ -199,7 +199,7 @@ delete comandos[nome]
 salvarComandos(comandos)
 
 return sock.sendMessage(from, {
-text: 🗑️ Comando ${nome} apagado!
+text: `🗑️ Comando ${nome} apagado!`
 })
 }
 
@@ -220,12 +220,12 @@ text: "Nenhum comando criado"
 return sock.sendMessage(from, {
 text:
 "📜 Comandos:\n\n" +
-lista.map(c => • ${c}).join("\n")
+lista.map(c => `• ${c}`).join("\n")
 })
 }
 
 // QUEST
-if (texto === "$Quest") {
+lista.map(c => `• ${c}`).join("\n")
 
 const quests = [
 
