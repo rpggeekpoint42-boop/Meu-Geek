@@ -70,13 +70,13 @@ async function iniciarBot() {
         if (!msg.message || msg.key.fromMe) return
 
         const from = msg.key.remoteJid
-        const texto = msg.message?.conversation || 
-                      msg.message?.extendedTextMessage?.text || 
-                      msg.message?.imageMessage?.caption || 
+        const texto = msg.message?.conversation ||
+                      msg.message?.extendedTextMessage?.text ||
+                      msg.message?.imageMessage?.caption ||
                       msg.message?.videoMessage?.caption
 
         if (!texto || typeof texto !== "string") return
-        
+
         const textoNormalizado = normalizarTexto(texto)
         const comandos = carregarComandos()
         const config = carregarConfig()
@@ -93,8 +93,8 @@ async function iniciarBot() {
             } catch { gruposCount = 0 }
 
             const ping = Date.now() - inicio
-            return sock.sendMessage(from, { 
-                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n👥 Grupos: ${gruposCount}\n🕒 Horário: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` 
+            return sock.sendMessage(from, {
+                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n 👥 Grupos: ${gruposCount}\n🕒 Horário: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
             })
         }
 
@@ -134,8 +134,8 @@ async function iniciarBot() {
         if (textoNormalizado === "$quest") {
             const quests = [
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual é seu anime favorito?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
-                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual Sua/Seu protagonista favorito?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
-                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual A Diferença Entre Falha E Ilusão?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
+                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual Sua/Seu protagonista favorito?\n\n➖✦ ➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
+                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual A Diferença Entre Falha E Ilusão?\n\n ➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual a diferença Entre Golpes Avançado É Especial?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n⚔️ Desafio\nDe bom dia/ tarde/Noite No Grupo Da Sua Raça Ou Classe\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:100🪙\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
@@ -167,6 +167,8 @@ async function iniciarBot() {
         const mencaoBot = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.some(m => m.includes(botNumero));
 
         if (mencaoBot && config.palavraChave && textoNormalizado.includes(config.palavraChave)) {
+            // AQUI ESTÁ A MUDANÇA: Agora ele só barra se NÃO for o grupo permitido.
+            // Se o grupoPermitido estiver vazio ou for o grupo certo, ele deixa passar.
             if (config.grupoPermitido && from !== config.grupoPermitido) return;
 
             const molde = `*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*\n\n*👾•🪎'- Caça ao Tesouro -'🪎•🎯*\n\nVocê ganhou ${config.recompensa1}\nAgora Responda a Pergunta Correta para um Bônus a Mais de: ${config.recompensa2}\nQual o Nome do Povo que Cuidava Do Grande Sino de Ouro que foi Parar Em Skypiea ?\n\n*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*`;
