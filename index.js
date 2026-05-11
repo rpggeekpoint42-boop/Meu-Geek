@@ -277,6 +277,8 @@ mentions: membros
 if (texto === "$Quest") {
 
 const quests = [
+`texto`
+]
 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖
 📜 QUEST GEEKPOINT
 
@@ -497,6 +499,8 @@ text: comandos[textoNormalizado]
 })
 }
 
+} // <- adiciona essa
+
 iniciarBot()
 
 const express = require("express")
@@ -510,4 +514,4 @@ const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
 console.log("Servidor rodando na porta " + PORT)
-})
+})    
