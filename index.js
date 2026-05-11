@@ -117,6 +117,9 @@ msg.message?.extendedTextMessage?.text ||
 msg.message?.imageMessage?.caption ||
 msg.message?.videoMessage?.caption
 
+console.log("CHAT:", from)
+console.log("MSG:", texto)
+
 if (!texto || typeof texto !== "string") return
 
 const comandos = carregarComandos()
@@ -228,6 +231,45 @@ return sock.sendMessage(from, {
 text:
 "📜 Comandos:\n\n" +
 lista.map(c => `• ${c}`).join("\n")
+})
+}
+
+// =========================
+// MARCAR SILÊNCIO
+// =========================
+
+if (texto.startsWith("$All ")) {
+
+if (!from.endsWith("@g.us")) {
+return sock.sendMessage(from, {
+text: "❌ Esse comando só funciona em grupos"
+})
+}
+
+const grupo = await sock.groupMetadata(from)
+
+const participante = grupo.participants.find(
+p => p.id === msg.key.participant
+)
+
+const isAdmin =
+participante?.admin === "admin" ||
+participante?.admin === "superadmin"
+
+if (!isAdmin) {
+return sock.sendMessage(from, {
+text: "❌ Apenas administradores podem usar esse comando"
+})
+}
+
+const mensagem = texto.slice(5)
+
+const membros = grupo.participants
+.map(p => p.id)
+
+return sock.sendMessage(from, {
+text: mensagem,
+mentions: membros
 })
 }
 
