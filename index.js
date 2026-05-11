@@ -238,7 +238,7 @@ lista.map(c => `• ${c}`).join("\n")
 // MARCAR SILÊNCIO
 // =========================
 
-if (texto.startsWith("$All ")) {
+if (texto.startsWith("$All")) {
 
 if (!from.endsWith("@g.us")) {
 return sock.sendMessage(from, {
@@ -274,7 +274,7 @@ mentions: membros
 }
 
 // QUEST
-if (textoNormalizado === "$quest")
+if (textoNormalizado === "$quest") {
 
 const quests = [
 `texto`
