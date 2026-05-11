@@ -6,15 +6,21 @@ const {
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
-const readline = require("readline")
+const fs = require("fs")
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-})
+const comandosPath = "./comandos.json"
 
-const pergunta = (txt) =>
-  new Promise((res) => rl.question(txt, res))
+if (!fs.existsSync(comandosPath)) {
+  fs.writeFileSync(comandosPath, JSON.stringify({}, null, 2))
+}
+
+function carregarComandos() {
+  return JSON.parse(fs.readFileSync(comandosPath))
+}
+
+function salvarComandos(data) {
+  fs.writeFileSync(comandosPath, JSON.stringify(data, null, 2))
+}
 
 async function iniciarBot() {
 
@@ -27,26 +33,11 @@ async function iniciarBot() {
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: false,
     logger: P({ level: "silent" }),
-    browser: ["Ubuntu", "Chrome", "20.0.04"]
+    browser: ["Render", "Chrome", "1.0"]
   })
 
   sock.ev.on("creds.update", saveCreds)
-
-  if (!sock.authState.creds.registered) {
-
-    let numero = await pergunta(
-      "Número com DDI: "
-    )
-
-    numero = numero.replace(/[^0-9]/g, "")
-
-    const code =
-      await sock.requestPairingCode(numero)
-
-    console.log(`\nCódigo: ${code}\n`)
-  }
 
   sock.ev.on("connection.update", async (update) => {
 
@@ -88,10 +79,111 @@ async function iniciarBot() {
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text
 
+    if (!texto) return
+
+    const comandos = carregarComandos()
+
+    // PING
     if (texto === "!ping") {
 
-      await sock.sendMessage(from, {
-        text: "pong 🏓"
+  const inicio = Date.now()
+
+  const grupos = Object.keys(sock.chats)
+    .filter(id => id.endsWith("@g.us")).length
+
+  const comandosTotal =
+    Object.keys(comandos).length
+
+  const horario = new Date().toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo"
+  })
+
+  const ping = Date.now() - inicio
+
+  return sock.sendMessage(from, {
+    text:
+`🏓 Pong!
+
+⚡ Velocidade: ${ping}ms
+👥 Grupos: ${grupos}
+📜 Comandos: ${comandosTotal}
+🕒 Horário Brasília:
+${horario}`
+  })
+}
+
+    // CRIAR COMANDO
+    // Exemplo:
+    // !criar oi|Olá!
+
+    if (texto.startsWith("!criar ")) {
+
+      const dados = texto.slice(8)
+
+      if (!dados.includes("|")) {
+        return sock.sendMessage(from, {
+          text: "Use: !criar nome|resposta"
+        })
+      }
+
+      const [nome, resposta] = dados.split("|")
+
+      comandos[nome.trim()] = resposta.trim()
+
+      salvarComandos(comandos)
+
+      return sock.sendMessage(from, {
+        text: `✅ Comando ${nome} criado!`
+      })
+    }
+
+    // APAGAR COMANDO
+    // !apagar oi
+
+    if (texto.startsWith("!apagar ")) {
+
+      const nome = texto.slice(9).trim()
+
+      if (!comandos[nome]) {
+        return sock.sendMessage(from, {
+          text: "❌ Esse comando não existe"
+        })
+      }
+
+      delete comandos[nome]
+
+      salvarComandos(comandos)
+
+      return sock.sendMessage(from, {
+        text: `🗑️ Comando ${nome} apagado!`
+      })
+    }
+
+    // LISTAR COMANDOS
+
+    if (texto === "!comandos") {
+
+      const lista = Object.keys(comandos)
+
+      if (lista.length === 0) {
+        return sock.sendMessage(from, {
+          text: "Nenhum comando criado"
+        })
+      }
+
+      return sock.sendMessage(from, {
+        text:
+          "📜 Comandos:\n\n" +
+          lista.map(c => `• ${c}`).join("\n")
+      })
+    }
+
+    // EXECUTAR COMANDO
+
+    if (comandos[texto]) {
+
+      return sock.sendMessage(from, {
+        text: comandos[texto]
       })
     }
   })
