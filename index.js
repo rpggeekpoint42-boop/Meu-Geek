@@ -225,10 +225,9 @@ lista.map(c => `• ${c}`).join("\n")
 }
 
 // QUEST
-lista.map(c => `• ${c}`).join("\n")
-
 if (texto === "$Quest") {
 
+const quests = [
 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖
 📜 QUEST GEEKPOINT
 
