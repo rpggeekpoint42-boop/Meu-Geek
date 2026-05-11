@@ -105,10 +105,12 @@ if (!msg.message) return
 const from = msg.key.remoteJid
 
 const texto =
-msg.message.conversation ||
-msg.message.extendedTextMessage?.text
+msg.message?.conversation ||
+msg.message?.extendedTextMessage?.text ||
+msg.message?.imageMessage?.caption ||
+msg.message?.videoMessage?.caption
 
-if (!texto) return
+if (!texto || typeof texto !== "string") return
 
 const comandos = carregarComandos()
 
@@ -427,8 +429,7 @@ Oq vc acha que poderia mudar no RPG?
 
 ]
 
-const sorteada =
-quests[Math.floor(Math.random() * quests.length)]
+const sorteada = quests[Math.floor(Math.random() * quests.length)]
 
 return sock.sendMessage(from, {
 text: sorteada
