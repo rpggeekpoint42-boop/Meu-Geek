@@ -274,7 +274,7 @@ mentions: membros
 }
 
 // QUEST
-if (texto === "$Quest") {
+if (textoNormalizado === "$quest")
 
 const quests = [
 `texto`
