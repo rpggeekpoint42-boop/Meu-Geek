@@ -15,7 +15,11 @@ if (!fs.existsSync(comandosPath)) {
 }
 
 function carregarComandos() {
-  return JSON.parse(fs.readFileSync(comandosPath))
+  try {
+    return JSON.parse(fs.readFileSync(comandosPath))
+  } catch {
+    return {}
+  }
 }
 
 function salvarComandos(data) {
@@ -83,25 +87,34 @@ async function iniciarBot() {
 
     const comandos = carregarComandos()
 
+    // =========================
     // PING
+    // =========================
+
     if (texto === "!ping") {
 
-  const inicio = Date.now()
+      const inicio = Date.now()
 
-  const grupos = Object.keys(sock.chats)
-    .filter(id => id.endsWith("@g.us")).length
+      let grupos = 0
 
-  const comandosTotal =
-    Object.keys(comandos).length
+      try {
+        const chats = await sock.groupFetchAllParticipating()
+        grupos = Object.keys(chats).length
+      } catch {
+        grupos = 0
+      }
 
-  const horario = new Date().toLocaleString("pt-BR", {
-    timeZone: "America/Sao_Paulo"
-  })
+      const comandosTotal =
+        Object.keys(comandos).length
 
-  const ping = Date.now() - inicio
+      const horario = new Date().toLocaleString("pt-BR", {
+        timeZone: "America/Sao_Paulo"
+      })
 
-  return sock.sendMessage(from, {
-    text:
+      const ping = Date.now() - inicio
+
+      return sock.sendMessage(from, {
+        text:
 `🏓 Pong!
 
 ⚡ Velocidade: ${ping}ms
@@ -109,12 +122,13 @@ async function iniciarBot() {
 📜 Comandos: ${comandosTotal}
 🕒 Horário Brasília:
 ${horario}`
-  })
-}
+      })
+    }
 
+    // =========================
     // CRIAR COMANDO
-    // Exemplo:
-    // !criar oi|Olá!
+    // !criar oi|Olá
+    // =========================
 
     if (texto.startsWith("!criar ")) {
 
@@ -137,8 +151,10 @@ ${horario}`
       })
     }
 
+    // =========================
     // APAGAR COMANDO
     // !apagar oi
+    // =========================
 
     if (texto.startsWith("!apagar ")) {
 
@@ -159,7 +175,9 @@ ${horario}`
       })
     }
 
+    // =========================
     // LISTAR COMANDOS
+    // =========================
 
     if (texto === "!comandos") {
 
@@ -178,7 +196,9 @@ ${horario}`
       })
     }
 
+    // =========================
     // EXECUTAR COMANDO
+    // =========================
 
     if (comandos[texto]) {
 
@@ -186,7 +206,9 @@ ${horario}`
         text: comandos[texto]
       })
     }
+
   })
+
 }
 
 iniciarBot()
