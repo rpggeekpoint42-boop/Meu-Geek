@@ -8,6 +8,13 @@ fetchLatestBaileysVersion
 const P = require("pino")
 const fs = require("fs")
 
+function normalizarTexto(texto) {
+return texto
+.toLowerCase()
+.normalize("NFD")
+.replace(/[\u0300-\u036f]/g, "")
+}
+
 const comandosPath = "./comandos.json"
 
 // =========================
@@ -170,7 +177,7 @@ text: "Use: !criar nome|resposta"
 
 const [nome, resposta] = dados.split("|")
 
-comandos[nome.trim()] = resposta.trim()
+comandos[normalizarTexto(nome.trim())] = resposta.trim()
 
 salvarComandos(comandos)
 
@@ -439,15 +446,13 @@ text: sorteada
 // EXECUTAR COMANDO
 // =========================
 
-if (comandos[texto]) {
+const textoNormalizado = normalizarTexto(texto)
+
+if (comandos[textoNormalizado]) {
 
 return sock.sendMessage(from, {
-text: comandos[texto]
+text: comandos[textoNormalizado]
 })
-}
-
-})
-
 }
 
 iniciarBot()
