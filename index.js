@@ -14,6 +14,11 @@ const comandosPath = "./comandos.json"
 const configPath = "./config_rpg.json"
 
 // =========================
+// CONFIGURAÇÕES DE DONO
+// =========================
+const donos = ["559188703053@s.whatsapp.net", "552196403024@s.whatsapp.net"]
+
+// =========================
 // UTILITÁRIOS
 // =========================
 
@@ -34,9 +39,6 @@ if (!fs.existsSync(configPath)) {
 function carregarComandos() { try { return JSON.parse(fs.readFileSync(comandosPath)) } catch { return {} } }
 function salvarComandos(data) { fs.writeFileSync(comandosPath, JSON.stringify(data, null, 2)) }
 function carregarConfig() { return JSON.parse(fs.readFileSync(configPath)) }
-function salvarConfig(data) { fs.writeFileSync(configPath, JSON.stringify(data, null, 2)) }
-
-const cooldowns = {}
 
 // =========================
 // INICIAR BOT
@@ -70,6 +72,11 @@ async function iniciarBot() {
         if (!msg.message || msg.key.fromMe) return
 
         const from = msg.key.remoteJid
+        const isGroup = from.endsWith("@g.us")
+        const sender = msg.key.participant || msg.key.remoteJid
+        const senderLimpo = sender.replace(/:.*@/, "@")
+        const isDono = donos.includes(senderLimpo)
+
         const texto = msg.message?.conversation ||
                       msg.message?.extendedTextMessage?.text ||
                       msg.message?.imageMessage?.caption ||
@@ -82,9 +89,31 @@ async function iniciarBot() {
         const config = carregarConfig()
 
         // =========================
-        // PING
+        // COMANDO MARCAR (SÓ ADMS OU DONOS)
+        // =========================
+        if (textoNormalizado === "!marcar" || textoNormalizado === "!todos") {
+            if (!isGroup) return
+            
+            const metadata = await sock.groupMetadata(from)
+            const participantes = metadata.participants
+            const isAdmin = participantes.find(p => p.id === sender)?.admin || isDono
+
+            if (!isAdmin) return // Se não for ADM nem Dono, ignora
+
+            const listaIds = participantes.map(p => p.id)
+            let aviso = texto.slice(8).trim() || "📢 *ATENÇÃO TODOS!*"
+
+            return sock.sendMessage(from, { 
+                text: aviso, 
+                mentions: listaIds 
+            })
+        }
+
+        // =========================
+        // PING (SÓ DONO)
         // =========================
         if (textoNormalizado === "!ping") {
+            if (!isDono) return
             const inicio = Date.now()
             let gruposCount = 0
             try {
@@ -94,42 +123,17 @@ async function iniciarBot() {
 
             const ping = Date.now() - inicio
             return sock.sendMessage(from, {
-                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n 👥 Grupos: ${gruposCount}\n🕒 Horário: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
+                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n 👥 Grupos: ${gruposCount}`
             })
         }
 
-        // =========================
-        // CONFIGURAÇÃO RPG
-        // =========================
-        if (texto.startsWith("!setpremios ")) {
-            const partes = texto.slice(12).split("|")
-            if (partes.length < 2) return sock.sendMessage(from, { text: "❌ Use: !setpremios Rec1 | Rec2" })
-            config.recompensa1 = partes[0].trim()
-            config.recompensa2 = partes[1].trim()
-            salvarConfig(config)
-            return sock.sendMessage(from, { text: "✅ Recompensas salvas!" })
-        }
-
-        if (texto.startsWith("$CriaPalavra|")) {
-            const palavra = texto.split("|")[1]
-            if (!palavra) return
-            config.palavraChave = normalizarTexto(palavra.trim())
-            salvarConfig(config)
-            return sock.sendMessage(from, { text: `🔑 Palavra definida: ${palavra.trim()}` })
-        }
-
-        if (texto === "!setgrupo") {
-            config.grupoPermitido = from
-            salvarConfig(config)
-            return sock.sendMessage(from, { text: "📍 Grupo oficial definido!" })
-        }
-
         if (texto === "!painel") {
+            if (!isDono) return
             return sock.sendMessage(from, { text: `⚙️ *PAINEL RPG*\n\n📍 Grupo: ${config.grupoPermitido}\n🔑 Palavra: ${config.palavraChave}\n🎁 Rec 1: ${config.recompensa1}\n🎁 Rec 2: ${config.recompensa2}` })
         }
 
         // =========================
-        // TODAS AS QUESTS (LISTA COMPLETA)
+        // QUESTS
         // =========================
         if (textoNormalizado === "$quest") {
             const quests = [
@@ -161,35 +165,39 @@ async function iniciarBot() {
         }
 
         // =========================
-        // GANHAR TESOURO (MARCAÇÃO)
+        // GANHAR TESOURO
         // =========================
         const botNumero = sock.user.id.split(":")[0];
         const mencaoBot = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.some(m => m.includes(botNumero));
 
         if (mencaoBot && config.palavraChave && textoNormalizado.includes(config.palavraChave)) {
-            // AQUI ESTÁ A MUDANÇA: Agora ele só barra se NÃO for o grupo permitido.
-            // Se o grupoPermitido estiver vazio ou for o grupo certo, ele deixa passar.
             if (config.grupoPermitido && from !== config.grupoPermitido) return;
 
-            const molde = `*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*\n\n*👾•🪎'- Caça ao Tesouro -'🪎•🎯*\n\nVocê ganhou ${config.recompensa1}\nAgora Responda a Pergunta Correta para um Bônus a Mais de: ${config.recompensa2}\nQual o Nome do Povo que Cuidava Do Grande Sino de Ouro que foi Parar Em Skypiea ?\n\n*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*`;
+            const molde = `*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*\n\n*👾•'- Caça ao Tesouro -'•🎯*\n\nVocê ganhou ${config.recompensa1}\nAgora Responda a Pergunta Correta para um Bônus a Mais de: ${config.recompensa2}\nQual o Nome do Povo que Cuidava Do Grande Sino de Ouro que foi Parar Em Skypiea ?\n\n*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*`;
             return sock.sendMessage(from, { text: molde });
         }
 
         // =========================
-        // COMANDOS DINÂMICOS
+        // CRIAR E APAGAR (DONO)
         // =========================
         if (texto.startsWith("!criar ")) {
+            if (!isDono) return
             const dados = texto.slice(7);
-            if (!dados.includes("|")) return sock.sendMessage(from, { text: "Use: !criar nome|resposta" });
-            const [nome, resposta] = dados.split("|");
-            comandos[normalizarTexto(nome.trim())] = resposta.trim();
+            if (!dados.includes("|")) return sock.sendMessage(from, { text: "❌ Use: !criar nome|resposta" });
+            const [nome, ...resto] = dados.split("|");
+            const resposta = resto.join("|").trim();
+            const nomeCmd = normalizarTexto(nome.trim());
+            
+            comandos[nomeCmd] = resposta;
             salvarComandos(comandos);
-            return sock.sendMessage(from, { text: `✅ Comando ${nome} criado!` });
+            return sock.sendMessage(from, { text: `✅ Comando *!${nome.trim()}* criado!` });
         }
 
         if (texto.startsWith("!apagar ")) {
-            const nome = texto.slice(8).trim();
+            if (!isDono) return
+            const nome = normalizarTexto(texto.slice(8).trim());
             if (!comandos[nome]) return sock.sendMessage(from, { text: "❌ Não existe" });
+            
             delete comandos[nome];
             salvarComandos(comandos);
             return sock.sendMessage(from, { text: `🗑️ Apagado!` });
