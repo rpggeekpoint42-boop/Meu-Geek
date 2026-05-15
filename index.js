@@ -2,16 +2,22 @@ const {
     default: makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    jidNormalizedUser
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
 const fs = require("fs")
 const express = require("express")
+const readline = require("readline")
 
 const app = express()
 const comandosPath = "./comandos.json"
 const configPath = "./config_rpg.json"
+
+// Interface para ler o número no terminal
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+const question = (text) => new Promise((resolve) => rl.question(text, resolve))
 
 // =========================
 // CONFIGURAÇÕES DE DONO
@@ -52,61 +58,66 @@ async function iniciarBot() {
         version,
         auth: state,
         logger: P({ level: "silent" }),
-        browser: ["Render", "Chrome", "1.0"]
+        browser: ["Ubuntu", "Chrome", "20.0.04"] 
     })
+
+    // LÓGICA DE PAREAMENTO POR CÓDIGO
+    if (!sock.authState.creds.registered) {
+        const numero = await question("📱 Digite o número do bot (ex:559180305171):\n> ")
+        const codigo = await sock.requestPairingCode(numero.trim())
+        console.log(`\n🔑 SEU CÓDIGO DE PAREAMENTO: ${codigo}\n`)
+    }
 
     sock.ev.on("creds.update", saveCreds)
 
     sock.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect } = update
         if (connection === "connecting") console.log("🔄 Conectando...")
-        if (connection === "open") console.log("✅ Conectado!")
+        if (connection === "open") console.log("✅ Conectado com sucesso!")
         if (connection === "close") {
             const motivo = lastDisconnect?.error?.output?.statusCode
             if (motivo !== DisconnectReason.loggedOut) iniciarBot()
         }
     })
 
-    sock.ev.on("messages.upsert", async ({ messages }) => {
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
         const msg = messages[0]
-        if (!msg.message || msg.key.fromMe) return
+        if (type !== "notify" || !msg.message || msg.key.fromMe) return
 
         const from = msg.key.remoteJid
         const isGroup = from.endsWith("@g.us")
-        const sender = msg.key.participant || msg.key.remoteJid
-        const senderLimpo = sender.replace(/:.*@/, "@")
-        const isDono = donos.includes(senderLimpo)
+        const sender = jidNormalizedUser(msg.key.participant || msg.key.remoteJid)
+        const isDono = donos.includes(sender)
 
         const texto = msg.message?.conversation ||
                       msg.message?.extendedTextMessage?.text ||
                       msg.message?.imageMessage?.caption ||
-                      msg.message?.videoMessage?.caption
-
-        if (!texto || typeof texto !== "string") return
+                      msg.message?.videoMessage?.caption || ""
 
         const textoNormalizado = normalizarTexto(texto)
         const comandos = carregarComandos()
         const config = carregarConfig()
 
+        // Log de atividade
+        console.log(`📩 [${sender}]: ${texto.slice(0, 25)}`)
+
         // =========================
-        // COMANDO MARCAR (SÓ ADMS OU DONOS)
+        // COMANDO MARCAR (ADMS OU DONOS)
         // =========================
         if (textoNormalizado === "!marcar" || textoNormalizado === "!todos") {
             if (!isGroup) return
-            
-            const metadata = await sock.groupMetadata(from)
-            const participantes = metadata.participants
-            const isAdmin = participantes.find(p => p.id === sender)?.admin || isDono
+            try {
+                const metadata = await sock.groupMetadata(from)
+                const participantes = metadata.participants
+                const isAdmin = participantes.find(p => jidNormalizedUser(p.id) === sender)?.admin || isDono
 
-            if (!isAdmin) return // Se não for ADM nem Dono, ignora
+                if (!isAdmin) return
 
-            const listaIds = participantes.map(p => p.id)
-            let aviso = texto.slice(8).trim() || "📢 *ATENÇÃO TODOS!*"
+                const listaIds = participantes.map(p => p.id)
+                let aviso = texto.split(" ").slice(1).join(" ") || "📢 *ATENÇÃO TODOS!*"
 
-            return sock.sendMessage(from, { 
-                text: aviso, 
-                mentions: listaIds 
-            })
+                return sock.sendMessage(from, { text: aviso, mentions: listaIds })
+            } catch (e) { console.error(e) }
         }
 
         // =========================
@@ -114,26 +125,11 @@ async function iniciarBot() {
         // =========================
         if (textoNormalizado === "!ping") {
             if (!isDono) return
-            const inicio = Date.now()
-            let gruposCount = 0
-            try {
-                const chats = await sock.groupFetchAllParticipating()
-                gruposCount = Object.keys(chats).length
-            } catch { gruposCount = 0 }
-
-            const ping = Date.now() - inicio
-            return sock.sendMessage(from, {
-                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n 👥 Grupos: ${gruposCount}`
-            })
-        }
-
-        if (texto === "!painel") {
-            if (!isDono) return
-            return sock.sendMessage(from, { text: `⚙️ *PAINEL RPG*\n\n📍 Grupo: ${config.grupoPermitido}\n🔑 Palavra: ${config.palavraChave}\n🎁 Rec 1: ${config.recompensa1}\n🎁 Rec 2: ${config.recompensa2}` })
+            return sock.sendMessage(from, { text: `🏓 *Pong!*` })
         }
 
         // =========================
-        // QUESTS
+        // QUESTS (PÚBLICO)
         // =========================
         if (textoNormalizado === "$quest") {
             const quests = [
@@ -149,7 +145,7 @@ async function iniciarBot() {
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:500🪙\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:10💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:20💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
-                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:30💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
+                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:30💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•8᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual habilidade pode matar o adversário de uma só vez?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual a diferença entre ataques é golpes?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nEntre paralisia com dano é paralisia sem dano qual vence?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
@@ -167,8 +163,8 @@ async function iniciarBot() {
         // =========================
         // GANHAR TESOURO
         // =========================
-        const botNumero = sock.user.id.split(":")[0];
-        const mencaoBot = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.some(m => m.includes(botNumero));
+        const botNumero = jidNormalizedUser(sock.user.id);
+        const mencaoBot = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.some(m => jidNormalizedUser(m) === botNumero);
 
         if (mencaoBot && config.palavraChave && textoNormalizado.includes(config.palavraChave)) {
             if (config.grupoPermitido && from !== config.grupoPermitido) return;
@@ -187,7 +183,7 @@ async function iniciarBot() {
             const [nome, ...resto] = dados.split("|");
             const resposta = resto.join("|").trim();
             const nomeCmd = normalizarTexto(nome.trim());
-            
+
             comandos[nomeCmd] = resposta;
             salvarComandos(comandos);
             return sock.sendMessage(from, { text: `✅ Comando *!${nome.trim()}* criado!` });
@@ -197,7 +193,7 @@ async function iniciarBot() {
             if (!isDono) return
             const nome = normalizarTexto(texto.slice(8).trim());
             if (!comandos[nome]) return sock.sendMessage(from, { text: "❌ Não existe" });
-            
+
             delete comandos[nome];
             salvarComandos(comandos);
             return sock.sendMessage(from, { text: `🗑️ Apagado!` });
@@ -213,5 +209,5 @@ iniciarBot()
 
 app.get("/", (req, res) => res.send("Bot Online"))
 const PORT = process.env.PORT || 3000
-app.listen(PORT, () => console.log("Servidor rodando"))
+app.listen(PORT, () => console.log("Servidor rodando na porta " + PORT))
 
