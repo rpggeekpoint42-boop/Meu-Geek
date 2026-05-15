@@ -2,27 +2,16 @@ const {
     default: makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
-    fetchLatestBaileysVersion,
-    jidNormalizedUser
+    fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
 const fs = require("fs")
 const express = require("express")
-const readline = require("readline")
 
 const app = express()
 const comandosPath = "./comandos.json"
 const configPath = "./config_rpg.json"
-
-// Interface para ler o número no terminal
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-const question = (text) => new Promise((resolve) => rl.question(text, resolve))
-
-// =========================
-// CONFIGURAÇÕES DE DONO
-// =========================
-const donos = ["559188703053@s.whatsapp.net", "552196403024@s.whatsapp.net"]
 
 // =========================
 // UTILITÁRIOS
@@ -45,6 +34,9 @@ if (!fs.existsSync(configPath)) {
 function carregarComandos() { try { return JSON.parse(fs.readFileSync(comandosPath)) } catch { return {} } }
 function salvarComandos(data) { fs.writeFileSync(comandosPath, JSON.stringify(data, null, 2)) }
 function carregarConfig() { return JSON.parse(fs.readFileSync(configPath)) }
+function salvarConfig(data) { fs.writeFileSync(configPath, JSON.stringify(data, null, 2)) }
+
+const cooldowns = {}
 
 // =========================
 // INICIAR BOT
@@ -58,78 +50,86 @@ async function iniciarBot() {
         version,
         auth: state,
         logger: P({ level: "silent" }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"] 
+        browser: ["Render", "Chrome", "1.0"]
     })
-
-    // LÓGICA DE PAREAMENTO POR CÓDIGO
-    if (!sock.authState.creds.registered) {
-        const numero = await question("📱 Digite o número do bot (ex:559180305171):\n> ")
-        const codigo = await sock.requestPairingCode(numero.trim())
-        console.log(`\n🔑 SEU CÓDIGO DE PAREAMENTO: ${codigo}\n`)
-    }
 
     sock.ev.on("creds.update", saveCreds)
 
     sock.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect } = update
         if (connection === "connecting") console.log("🔄 Conectando...")
-        if (connection === "open") console.log("✅ Conectado com sucesso!")
+        if (connection === "open") console.log("✅ Conectado!")
         if (connection === "close") {
             const motivo = lastDisconnect?.error?.output?.statusCode
             if (motivo !== DisconnectReason.loggedOut) iniciarBot()
         }
     })
 
-    sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    sock.ev.on("messages.upsert", async ({ messages }) => {
         const msg = messages[0]
-        if (type !== "notify" || !msg.message || msg.key.fromMe) return
+        if (!msg.message || msg.key.fromMe) return
 
         const from = msg.key.remoteJid
-        const isGroup = from.endsWith("@g.us")
-        const sender = jidNormalizedUser(msg.key.participant || msg.key.remoteJid)
-        const isDono = donos.includes(sender)
-
         const texto = msg.message?.conversation ||
                       msg.message?.extendedTextMessage?.text ||
                       msg.message?.imageMessage?.caption ||
-                      msg.message?.videoMessage?.caption || ""
+                      msg.message?.videoMessage?.caption
+
+        if (!texto || typeof texto !== "string") return
 
         const textoNormalizado = normalizarTexto(texto)
         const comandos = carregarComandos()
         const config = carregarConfig()
 
-        // Log de atividade
-        console.log(`📩 [${sender}]: ${texto.slice(0, 25)}`)
-
         // =========================
-        // COMANDO MARCAR (ADMS OU DONOS)
-        // =========================
-        if (textoNormalizado === "!marcar" || textoNormalizado === "!todos") {
-            if (!isGroup) return
-            try {
-                const metadata = await sock.groupMetadata(from)
-                const participantes = metadata.participants
-                const isAdmin = participantes.find(p => jidNormalizedUser(p.id) === sender)?.admin || isDono
-
-                if (!isAdmin) return
-
-                const listaIds = participantes.map(p => p.id)
-                let aviso = texto.split(" ").slice(1).join(" ") || "📢 *ATENÇÃO TODOS!*"
-
-                return sock.sendMessage(from, { text: aviso, mentions: listaIds })
-            } catch (e) { console.error(e) }
-        }
-
-        // =========================
-        // PING (SÓ DONO)
+        // PING
         // =========================
         if (textoNormalizado === "!ping") {
-            if (!isDono) return
-            return sock.sendMessage(from, { text: `🏓 *Pong!*` })
+            const inicio = Date.now()
+            let gruposCount = 0
+            try {
+                const chats = await sock.groupFetchAllParticipating()
+                gruposCount = Object.keys(chats).length
+            } catch { gruposCount = 0 }
+
+            const ping = Date.now() - inicio
+            return sock.sendMessage(from, {
+                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n 👥 Grupos: ${gruposCount}\n🕒 Horário: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
+            })
         }
 
         // =========================
-        // QUESTS (PÚBLICO)
+        // CONFIGURAÇÃO RPG
+        // =========================
+        if (texto.startsWith("!setpremios ")) {
+            const partes = texto.slice(12).split("|")
+            if (partes.length < 2) return sock.sendMessage(from, { text: "❌ Use: !setpremios Rec1 | Rec2" })
+            config.recompensa1 = partes[0].trim()
+            config.recompensa2 = partes[1].trim()
+            salvarConfig(config)
+            return sock.sendMessage(from, { text: "✅ Recompensas salvas!" })
+        }
+
+        if (texto.startsWith("$CriaPalavra|")) {
+            const palavra = texto.split("|")[1]
+            if (!palavra) return
+            config.palavraChave = normalizarTexto(palavra.trim())
+            salvarConfig(config)
+            return sock.sendMessage(from, { text: `🔑 Palavra definida: ${palavra.trim()}` })
+        }
+
+        if (texto === "!setgrupo") {
+            config.grupoPermitido = from
+            salvarConfig(config)
+            return sock.sendMessage(from, { text: "📍 Grupo oficial definido!" })
+        }
+
+        if (texto === "!painel") {
+            return sock.sendMessage(from, { text: `⚙️ *PAINEL RPG*\n\n📍 Grupo: ${config.grupoPermitido}\n🔑 Palavra: ${config.palavraChave}\n🎁 Rec 1: ${config.recompensa1}\n🎁 Rec 2: ${config.recompensa2}` })
+        }
+
+        // =========================
+        // TODAS AS QUESTS (LISTA COMPLETA)
         // =========================
         if (textoNormalizado === "$quest") {
             const quests = [
@@ -145,7 +145,7 @@ async function iniciarBot() {
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:500🪙\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:10💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:20💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
-                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:30💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•8᎒ ᯓ ➖✦➖✦➖`,
+                `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n🎁Recompensa\nVOCÊ GANHOU:30💎\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual habilidade pode matar o adversário de uma só vez?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nQual a diferença entre ataques é golpes?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
                 `➖✦➖✦➖ ᯓ ᎒•' 👾'•᎒ ᯓ ➖✦➖✦➖\n📜 QUEST GEEKPOINT\n\n❓ Pergunta\nEntre paralisia com dano é paralisia sem dano qual vence?\n\n➖✦➖✦➖ ᯓ ᎒•'🎯'•᎒ ᯓ ➖✦➖✦➖`,
@@ -161,39 +161,35 @@ async function iniciarBot() {
         }
 
         // =========================
-        // GANHAR TESOURO
+        // GANHAR TESOURO (MARCAÇÃO)
         // =========================
-        const botNumero = jidNormalizedUser(sock.user.id);
-        const mencaoBot = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.some(m => jidNormalizedUser(m) === botNumero);
+        const botNumero = sock.user.id.split(":")[0];
+        const mencaoBot = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.some(m => m.includes(botNumero));
 
         if (mencaoBot && config.palavraChave && textoNormalizado.includes(config.palavraChave)) {
+            // AQUI ESTÁ A MUDANÇA: Agora ele só barra se NÃO for o grupo permitido.
+            // Se o grupoPermitido estiver vazio ou for o grupo certo, ele deixa passar.
             if (config.grupoPermitido && from !== config.grupoPermitido) return;
 
-            const molde = `*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*\n\n*👾•'- Caça ao Tesouro -'•🎯*\n\nVocê ganhou ${config.recompensa1}\nAgora Responda a Pergunta Correta para um Bônus a Mais de: ${config.recompensa2}\nQual o Nome do Povo que Cuidava Do Grande Sino de Ouro que foi Parar Em Skypiea ?\n\n*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*`;
+            const molde = `*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*\n\n*👾•�'- Caça ao Tesouro -'�•🎯*\n\nVocê ganhou ${config.recompensa1}\nAgora Responda a Pergunta Correta para um Bônus a Mais de: ${config.recompensa2}\nQual o Nome do Povo que Cuidava Do Grande Sino de Ouro que foi Parar Em Skypiea ?\n\n*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*`;
             return sock.sendMessage(from, { text: molde });
         }
 
         // =========================
-        // CRIAR E APAGAR (DONO)
+        // COMANDOS DINÂMICOS
         // =========================
         if (texto.startsWith("!criar ")) {
-            if (!isDono) return
             const dados = texto.slice(7);
-            if (!dados.includes("|")) return sock.sendMessage(from, { text: "❌ Use: !criar nome|resposta" });
-            const [nome, ...resto] = dados.split("|");
-            const resposta = resto.join("|").trim();
-            const nomeCmd = normalizarTexto(nome.trim());
-
-            comandos[nomeCmd] = resposta;
+            if (!dados.includes("|")) return sock.sendMessage(from, { text: "Use: !criar nome|resposta" });
+            const [nome, resposta] = dados.split("|");
+            comandos[normalizarTexto(nome.trim())] = resposta.trim();
             salvarComandos(comandos);
-            return sock.sendMessage(from, { text: `✅ Comando *!${nome.trim()}* criado!` });
+            return sock.sendMessage(from, { text: `✅ Comando ${nome} criado!` });
         }
 
         if (texto.startsWith("!apagar ")) {
-            if (!isDono) return
-            const nome = normalizarTexto(texto.slice(8).trim());
+            const nome = texto.slice(8).trim();
             if (!comandos[nome]) return sock.sendMessage(from, { text: "❌ Não existe" });
-
             delete comandos[nome];
             salvarComandos(comandos);
             return sock.sendMessage(from, { text: `🗑️ Apagado!` });
@@ -209,5 +205,4 @@ iniciarBot()
 
 app.get("/", (req, res) => res.send("Bot Online"))
 const PORT = process.env.PORT || 3000
-app.listen(PORT, () => console.log("Servidor rodando na porta " + PORT))
-
+app.listen(PORT, () => console.log("Servidor rodando"))
