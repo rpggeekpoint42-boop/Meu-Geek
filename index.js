@@ -167,11 +167,9 @@ async function iniciarBot() {
         const mencaoBot = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.some(m => m.includes(botNumero));
 
         if (mencaoBot && config.palavraChave && textoNormalizado.includes(config.palavraChave)) {
-            // AQUI ESTÁ A MUDANÇA: Agora ele só barra se NÃO for o grupo permitido.
-            // Se o grupoPermitido estiver vazio ou for o grupo certo, ele deixa passar.
             if (config.grupoPermitido && from !== config.grupoPermitido) return;
 
-            const molde = `*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*\n\n*👾•�'- Caça ao Tesouro -'�•🎯*\n\nVocê ganhou ${config.recompensa1}\nAgora Responda a Pergunta Correta para um Bônus a Mais de: ${config.recompensa2}\nQual o Nome do Povo que Cuidava Do Grande Sino de Ouro que foi Parar Em Skypiea ?\n\n*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*`;
+            const molde = `*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*\n\n*👾•'- Caça ao Tesouro -'•🎯*\n\nVocê ganhou ${config.recompensa1}\nAgora Responda a Pergunta Correta para um Bônus a Mais de: ${config.recompensa2}\nQual o Nome do Povo que Cuidava Do Grande Sino de Ouro que foi Parar Em Skypiea ?\n\n*➖ ᯓ 👾❝ Geek'Point RPG ❞🎯 ᯓ ➖*`;
             return sock.sendMessage(from, { text: molde });
         }
 
@@ -195,8 +193,21 @@ async function iniciarBot() {
             return sock.sendMessage(from, { text: `🗑️ Apagado!` });
         }
 
+        // Execução dos comandos dinâmicos (Verifica se possui múltiplas mensagens)
         if (comandos[textoNormalizado]) {
-            return sock.sendMessage(from, { text: comandos[textoNormalizado] });
+            const respostaCompleta = comandos[textoNormalizado];
+            
+            if (respostaCompleta.includes("//")) {
+                const partes = respostaCompleta.split("//");
+                for (const parte of partes) {
+                    if (parte.trim()) {
+                        await sock.sendMessage(from, { text: parte.trim() });
+                    }
+                }
+                return;
+            } else {
+                return sock.sendMessage(from, { text: respostaCompleta });
+            }
         }
     })
 }
@@ -206,3 +217,4 @@ iniciarBot()
 app.get("/", (req, res) => res.send("Bot Online"))
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => console.log("Servidor rodando"))
+
