@@ -13,6 +13,9 @@ const app = express()
 const comandosPath = "./comandos.json"
 const configPath = "./config_rpg.json"
 
+// Função utilitária para dar um tempo entre mensagens simultâneas
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 // =========================
 // UTILITÁRIOS
 // =========================
@@ -36,8 +39,6 @@ function salvarComandos(data) { fs.writeFileSync(comandosPath, JSON.stringify(da
 function carregarConfig() { return JSON.parse(fs.readFileSync(configPath)) }
 function salvarConfig(data) { fs.writeFileSync(configPath, JSON.stringify(data, null, 2)) }
 
-const cooldowns = {}
-
 // =========================
 // INICIAR BOT
 // =========================
@@ -57,11 +58,16 @@ async function iniciarBot() {
 
     sock.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect } = update
-        if (connection === "connecting") console.log("🔄 Conectando...")
-        if (connection === "open") console.log("✅ Conectado!")
+        if (connection === "connecting") console.log("🔄 Conectando ao WhatsApp...")
+        if (connection === "open") console.log("✅ Bot Conectado com Sucesso!")
         if (connection === "close") {
             const motivo = lastDisconnect?.error?.output?.statusCode
-            if (motivo !== DisconnectReason.loggedOut) iniciarBot()
+            if (motivo !== DisconnectReason.loggedOut) {
+                console.log("⚠️ Conexão perdida. Reconectando...")
+                iniciarBot()
+            } else {
+                console.log("❌ Sessão encerrada. Delete a pasta 'auth' e escaneie o QR Code novamente.")
+            }
         }
     })
 
@@ -94,7 +100,7 @@ async function iniciarBot() {
 
             const ping = Date.now() - inicio
             return sock.sendMessage(from, {
-                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n 👥 Grupos: ${gruposCount}\n🕒 Horário: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
+                text: `🏓 *Pong!*\n\n⚡ Velocidade: ${ping}ms\n👥 Grupos: ${gruposCount}\n🕒 Horário: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
             })
         }
 
@@ -107,7 +113,7 @@ async function iniciarBot() {
             config.recompensa1 = partes[0].trim()
             config.recompensa2 = partes[1].trim()
             salvarConfig(config)
-            return sock.sendMessage(from, { text: "✅ Recompensas salvas!" })
+            return sock.sendMessage(from, { text: "✅ Recompensas salvas com sucesso!" })
         }
 
         if (texto.startsWith("$CriaPalavra|")) {
@@ -115,17 +121,17 @@ async function iniciarBot() {
             if (!palavra) return
             config.palavraChave = normalizarTexto(palavra.trim())
             salvarConfig(config)
-            return sock.sendMessage(from, { text: `🔑 Palavra definida: ${palavra.trim()}` })
+            return sock.sendMessage(from, { text: `🔑 Palavra-chave definida: ${palavra.trim()}` })
         }
 
         if (texto === "!setgrupo") {
             config.grupoPermitido = from
             salvarConfig(config)
-            return sock.sendMessage(from, { text: "📍 Grupo oficial definido!" })
+            return sock.sendMessage(from, { text: "📍 Grupo oficial do RPG definido aqui!" })
         }
 
         if (texto === "!painel") {
-            return sock.sendMessage(from, { text: `⚙️ *PAINEL RPG*\n\n📍 Grupo: ${config.grupoPermitido}\n🔑 Palavra: ${config.palavraChave}\n🎁 Rec 1: ${config.recompensa1}\n🎁 Rec 2: ${config.recompensa2}` })
+            return sock.sendMessage(from, { text: `⚙️ *PAINEL RPG*\n\n📍 Grupo: ${config.grupoPermitido || "Não definido"}\n🔑 Palavra: ${config.palavraChave || "Não definida"}\n🎁 Rec 1: ${config.recompensa1}\n🎁 Rec 2: ${config.recompensa2}` })
         }
 
         // =========================
@@ -178,30 +184,40 @@ async function iniciarBot() {
         // =========================
         if (texto.startsWith("!criar ")) {
             const dados = texto.slice(7);
-            if (!dados.includes("|")) return sock.sendMessage(from, { text: "Use: !criar nome|resposta" });
+            if (!dados.includes("|")) return sock.sendMessage(from, { text: "❌ Use: !criar nome|resposta" });
             const [nome, resposta] = dados.split("|");
             comandos[normalizarTexto(nome.trim())] = resposta.trim();
             salvarComandos(comandos);
-            return sock.sendMessage(from, { text: `✅ Comando ${nome} criado!` });
+            return sock.sendMessage(from, { text: `✅ Comando *!${nome.trim()}* criado com sucesso!` });
         }
 
         if (texto.startsWith("!apagar ")) {
-            const nome = texto.slice(8).trim();
-            if (!comandos[nome]) return sock.sendMessage(from, { text: "❌ Não existe" });
+            const nome = normalizarTexto(texto.slice(8).trim());
+            if (!comandos[nome]) return sock.sendMessage(from, { text: "❌ Esse comando não existe." });
             delete comandos[nome];
             salvarComandos(comandos);
-            return sock.sendMessage(from, { text: `🗑️ Apagado!` });
+            return sock.sendMessage(from, { text: `🗑️ Comando apagado!` });
         }
 
-        // Execução dos comandos dinâmicos (Verifica se possui múltiplas mensagens)
+        // Execução dos comandos dinâmicos (Verifica se possui múltiplas mensagens ou números aleatórios)
         if (comandos[textoNormalizado]) {
-            const respostaCompleta = comandos[textoNormalizado];
+            let respostaCompleta = comandos[textoNormalizado];
             
+            // Lógica para detectar "randow MIN%MAX" e gerar o número dinamicamente
+            const regexRandow = /randow\s+(\d+)%(\d+)/gi;
+            respostaCompleta = respostaCompleta.replace(regexRandow, (match, min, max) => {
+                const minimo = parseInt(min);
+                const maximo = parseInt(max);
+                // Gera o número aleatório incluindo os limites fornecidos
+                return Math.floor(Math.random() * (maximo - minimo + 1)) + minimo;
+            });
+
             if (respostaCompleta.includes("//")) {
                 const partes = respostaCompleta.split("//");
                 for (const parte of partes) {
                     if (parte.trim()) {
                         await sock.sendMessage(from, { text: parte.trim() });
+                        await delay(1500); 
                     }
                 }
                 return;
@@ -214,7 +230,7 @@ async function iniciarBot() {
 
 iniciarBot()
 
-app.get("/", (req, res) => res.send("Bot Online"))
+app.get("/", (req, res) => res.send("Bot RPG Online e Operante!"))
 const PORT = process.env.PORT || 3000
-app.listen(PORT, () => console.log("Servidor rodando"))
+app.listen(PORT, () => console.log(`🚀 Servidor Express rodando na porta ${PORT}`))
 
